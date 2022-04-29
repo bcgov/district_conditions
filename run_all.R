@@ -12,6 +12,5 @@
 # See the License for the specific language governing permissions and limitations under the License.
 
 #This file: builds the project
-
 source("01_source_me.R")
-rmarkdown::render("02_run_document.Rmd")
+rmarkdown::run("02_run_document.Rmd")

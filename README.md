@@ -12,22 +12,15 @@ district_conditions
 
 Describe data being used (links), and how to run. Eg:
 
-There are four core scripts that are required for the analysis, they need to be run in order:
+There are two core scripts that are required for the analysis, they need to be run in order:
 
--   01\_clean.R
--   02\_analysis.R
--   03\_visualize.R
--   04\_output.R
+-   01_source_me.R
+-   02_run_document.Rmd
 
-#### Example
-
-This is a basic example which shows you how to solve a common problem:
-
-``` r
-## basic example code
-```
 
 ### Project Status
+
+[![Lifecycle:Experimental](https://img.shields.io/badge/Lifecycle-Experimental-339999)]
 
 ### Getting Help or Reporting an Issue
 

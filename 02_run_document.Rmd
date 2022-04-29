@@ -5,7 +5,7 @@ output:
   flexdashboard::flex_dashboard:
     orientation: columns
     social: menu
-    source_code: embed
+    source_code: https://github.com/bcgov/district_conditions 
     css: style.css
 runtime: shiny
 ---
