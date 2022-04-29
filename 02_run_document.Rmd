@@ -1,0 +1,276 @@
+---
+title: "Regional District Current Conditions Monitor"
+date: "`r paste0('updated: ',as.Date(file.info(here::here('processed_data','district_conditions.rds'))$mtime-lubridate::hours(0)))`"
+output:
+  flexdashboard::flex_dashboard:
+    orientation: columns
+    social: menu
+    source_code: embed
+    css: style.css
+runtime: shiny
+---
+
+```{r global, include=FALSE}
+# Copyright 2022 Province of British Columbia
+#
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+#
+# http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and limitations under the License.
+#libraries----------
+library(tidyverse)
+#load objects--------
+bcPalette <- c("#fabc29","#1f4181")
+source(here::here("R", "functions.R"))
+choropleths <- readRDS(here::here("processed_data", "choropleths.rds"))
+district_conditions <- readRDS(here::here("processed_data", "district_conditions.rds"))%>%
+  mutate(district = str_to_title(str_replace_all(district, "_", " ")))
+standardized <- district_conditions%>%
+  filter(type == "normalized")%>%
+  dplyr::group_by(thing)%>%
+  mutate(prop_of_max = round(value/max(value, na.rm=TRUE),3))
+source("pca_index.R")
+district_conditions <- district_conditions%>%
+  mutate(value=scales::comma(value,accuracy = .001))
+```
+
+Maps
+=====================================  
+
+Inputs {.sidebar}
+-------------------------------------
+
+```{r}
+shiny::selectInput("which_map", 
+            label = "Choose a variable:",
+            choices = unique(choropleths$name), 
+            selected = choropleths$name[1])
+```
+
+Column 
+-------------------------------------
+    
+### `r reactive({input$which_map})`
+    
+```{r, fig.retina = 3}
+renderPlot({
+  choropleths%>%
+    filter(name==input$which_map)%>%
+    pull(the_map)
+})%>%
+  bindCache(input$which_map)
+```
+
+
+
+By District
+=====================================  
+
+Inputs {.sidebar}
+-------------------------------------
+
+```{r}
+shiny::selectInput("which_district", 
+            label = "Choose a district:",
+            choices = unique(standardized$district), 
+            selected = unique(standardized$district)[1]) 
+```
+
+    
+Column 
+-------------------------------------
+    
+### `r reactive({input$which_district})`
+    
+```{r}
+
+plotly::renderPlotly({
+  standardized <-  standardized%>%
+    mutate(colour=if_else(district==input$which_district, input$which_district, "All other Districts"))
+  plt <- ggplot(standardized, aes(thing, 
+                                  prop_of_max, 
+                                  colour=colour,
+                                  text = paste(district,
+                                              thing,
+                                              scales::percent(prop_of_max),
+                                              "of maximum value", sep=" ")))+
+    geom_point(alpha=.5, size=4,
+               position = position_jitter(seed = 1,
+                                          width = .1, 
+                                          height=0),
+               show.legend = FALSE)+
+    scale_y_continuous(labels=scales::percent)+
+    scale_colour_manual(values=bcPalette)+
+    labs(x="",
+         y="Percentage of maximum normalized value")+
+    theme_minimal()
+     
+  plotly::ggplotly(plt, tooltip = "text")
+})%>%
+  bindCache(input$which_district)
+```
+
+By Region
+=====================================  
+
+Inputs {.sidebar}
+-------------------------------------
+
+```{r}
+shiny::selectInput("which_region", 
+            label = "Choose a region:",
+            choices = unique(district_conditions$region), 
+            selected = "Mainland/Southwest") 
+```
+
+    
+Column 
+-------------------------------------
+    
+### `r reactive({input$which_region})`
+    
+```{r}
+DT::renderDataTable(server=FALSE,{
+  district_conditions%>%
+    filter(region==input$which_region)%>%
+    select(-region, -thing, -type)%>%
+    pivot_wider(id_cols = district, names_from = name, values_from = value)%>%
+    DT::datatable(extensions = "Buttons",
+              rownames = FALSE,     
+              options = list(columnDefs = list(list(className = 'dt-center', targets = "_all")),
+                             paging = TRUE,
+                             scrollX=TRUE,
+                             scrollY=TRUE,
+                             searching = TRUE,
+                             ordering = TRUE,
+                             dom = 'Btip',
+                             buttons = list(
+                                list(extend = 'csv', filename =  input$which_region),
+                                list(extend = 'excel', filename = input$which_region)
+                             ),
+                             pageLength=10, 
+                             lengthMenu=c(3,5)))
+})
+```
+
+
+By Variable
+=====================================  
+
+Inputs {.sidebar}
+-------------------------------------
+
+```{r}
+shiny::selectInput("which_thing", 
+            label = "Choose a variable:",
+            choices = unique(district_conditions$thing), 
+            selected = "Building Permits") 
+```
+
+    
+Column 
+-------------------------------------
+    
+### `r reactive({input$which_thing})`
+    
+```{r}
+DT::renderDataTable(server=FALSE,{
+  district_conditions%>%
+    filter(thing==input$which_thing)%>%
+    select(-region, -thing, -type)%>%
+    pivot_wider(id_cols = district, names_from = name, values_from = value)%>%
+    DT::datatable(extensions = "Buttons",
+              rownames = FALSE,     
+              options = list(columnDefs = list(list(className = 'dt-center', targets = "_all")),
+                             paging = TRUE,
+                             scrollX=TRUE,
+                             scrollY=TRUE,
+                             searching = TRUE,
+                             ordering = TRUE,
+                             dom = 'Btip',
+                             buttons = list(
+                                list(extend = 'csv', filename =  input$which_region),
+                                list(extend = 'excel', filename = input$which_region)
+                             ),
+                             pageLength=10, 
+                             lengthMenu=c(3,5)))
+})
+```
+
+By Type
+=====================================  
+
+Inputs {.sidebar}
+-------------------------------------
+
+```{r}
+shiny::selectInput("which_type", 
+            label = "Choose a type:",
+            choices = unique(district_conditions$type), 
+            selected = "index") 
+```
+
+    
+Column 
+-------------------------------------
+    
+### `r reactive({input$which_type})`
+    
+```{r}
+DT::renderDataTable(server=FALSE,{
+  district_conditions%>%
+    filter(type==input$which_type)%>%
+    select(-region, -thing, -type)%>%
+    pivot_wider(id_cols = district, names_from = name, values_from = value)%>%
+    DT::datatable(extensions = "Buttons",
+              rownames = FALSE,     
+              options = list(columnDefs = list(list(className = 'dt-center', targets = "_all")),
+                             paging = TRUE,
+                             scrollX=TRUE,
+                             scrollY=TRUE,
+                             searching = TRUE,
+                             ordering = TRUE,
+                             dom = 'Btip',
+                             buttons = list(
+                                list(extend = 'csv', filename =  input$which_region),
+                                list(extend = 'excel', filename = input$which_region)
+                             ),
+                             pageLength=10, 
+                             lengthMenu=c(3,5)))
+})
+```
+
+
+Index based on PCA
+=====================================  
+
+Inputs {.sidebar}
+-------------------------------------
+
+```{r}
+shiny::selectInput("which_plot", 
+            label = "Choose a plot:",
+            choices = pca_plots$names, 
+            selected = pca_plots$names[1]) 
+```
+
+    
+Column 
+-------------------------------------
+    
+### `r reactive({input$which_plot})`
+    
+```{r}
+renderPlot({
+   pca_plots%>%
+    filter(names==input$which_plot)%>%
+    pull(plots)
+})%>%
+  bindCache(input$which_plot)
+```
+
