@@ -30,14 +30,7 @@ bcPalette <- c("#fabc29", "#1f4181")
 source(here::here("R", "functions.R"))
 district_conditions <- readRDS(here::here("processed_data", "district_conditions.rds"))
 pca <- readRDS(here::here("processed_data", "pca.rds"))
-standardized_vars <- unique(district_conditions$name)[
-  str_detect(unique(district_conditions$name), pattern="per capita") |
-  str_detect(unique(district_conditions$name), pattern="growth")]
-standardized <- district_conditions%>%
-  select(-geometry)%>%
-  filter(name %in% standardized_vars)%>%
-  group_by(name)%>%
-  mutate(prop_of_max = value/max(value, na.rm=TRUE))
+standardized <- readRDS(here::here("processed_data", "standardized.rds"))
 ```
 
 Maps
@@ -63,8 +56,6 @@ checkboxInput("add_annotations", "Annotate Map?", value = FALSE)
 * The overall index is the average of the available deciles for each district. 
 * An index based on Principal Components is also provided for comparison. 
 
-
-
 Column 
 -------------------------------------
     
@@ -78,7 +69,6 @@ bindCache(input$what_var, input$add_annotations)
 ```
 
 
-
 By District
 =====================================  
 
@@ -88,8 +78,8 @@ Inputs {.sidebar}
 ```{r}
 shiny::selectInput("which_district", 
             label = "Choose a district:",
-            choices = unique(district_conditions$District), 
-            selected = unique(district_conditions$District)[1]) 
+            choices = unique(standardized$District), 
+            selected = unique(standardized$District)[1]) 
 ```
 
 * This plot allows you to compare a single district with all other districts.
@@ -106,7 +96,7 @@ Column
   plotly::renderPlotly({
   standardized <-  standardized%>%
     mutate(colour=if_else(District==input$which_district, input$which_district, "All other Districts"))
-  #standardized<- plotly::highlight_key(standardized, ~District) 
+#  standardized<- plotly::highlight_key(standardized, ~District) #(for showing groups on hover) 
   plt <- ggplot(standardized, aes(name, 
                                   prop_of_max, 
                                   colour=colour,
@@ -128,7 +118,7 @@ Column
      
   gg <- plotly::ggplotly(plt, tooltip = "text")
   gg  
-#  plotly::highlight(gg, on = "plotly_hover", off = "plotly_deselect", color = "red")
+ # plotly::highlight(gg, on = "plotly_hover", off = "plotly_deselect", color = "#1f4181") #(for showing groups on hover) 
 })%>%
   bindCache(input$which_district)
 ```
@@ -323,8 +313,3 @@ renderPlot({
   }
 })
 ```
-
-
-
-
-
