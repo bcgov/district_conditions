@@ -3,7 +3,7 @@ title: "Regional District Current Conditions Monitor"
 date: "`r paste0('updated: ',as.Date(file.info(here::here('processed_data','district_conditions.rds'))$mtime-lubridate::hours(0)))`"
 output:
   flexdashboard::flex_dashboard:
-    orientation: columns
+    orientation: rows
     social: menu
     source_code: https://github.com/bcgov/district_conditions 
     css: style.css
@@ -22,21 +22,22 @@ runtime: shiny
 # Unless required by applicable law or agreed to in writing, software distributed under the License is distributed on an "AS IS" BASIS,
 # WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 # See the License for the specific language governing permissions and limitations under the License.
-#libraries----------
+# libraries----------
 library(tidyverse)
-#load objects--------
-bcPalette <- c("#fabc29","#1f4181")
+# load objects--------
+bc_map <- bcmaps::bc_bound()
+bcPalette <- c("#fabc29", "#1f4181")
 source(here::here("R", "functions.R"))
-choropleths <- readRDS(here::here("processed_data", "choropleths.rds"))
-district_conditions <- readRDS(here::here("processed_data", "district_conditions.rds"))%>%
-  mutate(district = str_to_title(str_replace_all(district, "_", " ")))
+district_conditions <- readRDS(here::here("processed_data", "district_conditions.rds"))
+pca <- readRDS(here::here("processed_data", "pca.rds"))
+standardized_vars <- unique(district_conditions$name)[
+  str_detect(unique(district_conditions$name), pattern="per capita") |
+  str_detect(unique(district_conditions$name), pattern="growth")]
 standardized <- district_conditions%>%
-  filter(type == "normalized")%>%
-  dplyr::group_by(thing)%>%
-  mutate(prop_of_max = round(value/max(value, na.rm=TRUE),3))
-source("pca_index.R")
-district_conditions <- district_conditions%>%
-  mutate(value=scales::comma(value,accuracy = .001))
+  select(-geometry)%>%
+  filter(name %in% standardized_vars)%>%
+  group_by(name)%>%
+  mutate(prop_of_max = value/max(value, na.rm=TRUE))
 ```
 
 Maps
@@ -46,24 +47,34 @@ Inputs {.sidebar}
 -------------------------------------
 
 ```{r}
-shiny::selectInput("which_map", 
-            label = "Choose a variable:",
-            choices = unique(choropleths$name), 
-            selected = choropleths$name[1])
+plot_vars <- rev(unique(district_conditions$name)[str_detect(unique(district_conditions$name), 
+                                                         pattern = "raw data", 
+                                                         negate = TRUE)])
+shiny::selectInput("what_var",
+  label = "Variable to plot:",
+  choices = plot_vars,
+  selected = plot_vars[1]
+)
+checkboxInput("add_annotations", "Annotate Map?", value = FALSE)
 ```
+
+* The overall index is a score (out of 10) based on 6 measures of economic activity.
+* Each of the 6 measures are first normalized (either per capita or growth rate) and then put into 10 bins (deciles)
+* The overall index is the average of the available deciles for each district. 
+* An index based on Principal Components is also provided for comparison. 
+
+
 
 Column 
 -------------------------------------
     
-### `r reactive({input$which_map})`
+### `r reactive({input$what_var})`
     
 ```{r, fig.retina = 3}
 renderPlot({
-  choropleths%>%
-    filter(name==input$which_map)%>%
-    pull(the_map)
-})%>%
-  bindCache(input$which_map)
+  static_map(input$what_var, district_conditions , bc_map, input$add_annotations)
+}) %>%
+bindCache(input$what_var, input$add_annotations)  
 ```
 
 
@@ -77,10 +88,14 @@ Inputs {.sidebar}
 ```{r}
 shiny::selectInput("which_district", 
             label = "Choose a district:",
-            choices = unique(standardized$district), 
-            selected = unique(standardized$district)[1]) 
+            choices = unique(district_conditions$District), 
+            selected = unique(district_conditions$District)[1]) 
 ```
 
+* This plot allows you to compare a single district with all other districts.
+* The height is the percentage of the maximum normalized (per capita or growth) measure of economic activity.
+* Note that economic assistance and economic activity inversely related.  
+ 
     
 Column 
 -------------------------------------
@@ -88,21 +103,22 @@ Column
 ### `r reactive({input$which_district})`
     
 ```{r}
-
-plotly::renderPlotly({
+  plotly::renderPlotly({
   standardized <-  standardized%>%
-    mutate(colour=if_else(district==input$which_district, input$which_district, "All other Districts"))
-  plt <- ggplot(standardized, aes(thing, 
+    mutate(colour=if_else(District==input$which_district, input$which_district, "All other Districts"))
+  #standardized<- plotly::highlight_key(standardized, ~District) 
+  plt <- ggplot(standardized, aes(name, 
                                   prop_of_max, 
                                   colour=colour,
-                                  text = paste(district,
-                                              thing,
-                                              scales::percent(prop_of_max),
+                                  group=District,
+                                  text = paste(District,
+                                              name,
+                                              scales::percent(prop_of_max, accuracy = .1),
                                               "of maximum value", sep=" ")))+
     geom_point(alpha=.5, size=4,
                position = position_jitter(seed = 1,
                                           width = .1, 
-                                          height=0),
+                                          height = 0),
                show.legend = FALSE)+
     scale_y_continuous(labels=scales::percent)+
     scale_colour_manual(values=bcPalette)+
@@ -110,7 +126,9 @@ plotly::renderPlotly({
          y="Percentage of maximum normalized value")+
     theme_minimal()
      
-  plotly::ggplotly(plt, tooltip = "text")
+  gg <- plotly::ggplotly(plt, tooltip = "text")
+  gg  
+#  plotly::highlight(gg, on = "plotly_hover", off = "plotly_deselect", color = "red")
 })%>%
   bindCache(input$which_district)
 ```
@@ -124,10 +142,11 @@ Inputs {.sidebar}
 ```{r}
 shiny::selectInput("which_region", 
             label = "Choose a region:",
-            choices = unique(district_conditions$region), 
+            choices = unique(district_conditions$Region), 
             selected = "Mainland/Southwest") 
 ```
 
+* This table allows you to compare districts within a region across all measures of economic activity. 
     
 Column 
 -------------------------------------
@@ -135,11 +154,18 @@ Column
 ### `r reactive({input$which_region})`
     
 ```{r}
-DT::renderDataTable(server=FALSE,{
+DT::renderDataTable(server=FALSE, {
   district_conditions%>%
-    filter(region==input$which_region)%>%
-    select(-region, -thing, -type)%>%
-    pivot_wider(id_cols = district, names_from = name, values_from = value)%>%
+    filter(Region==input$which_region)%>%
+    select(-Region, -geometry)%>%
+    mutate(value=scales::comma(value, accuracy=.0001))%>%
+    pivot_wider(id_cols = District, names_from = name, values_from = value)%>%
+    select(District, 
+           contains("Overall"), 
+           contains("decile"), 
+           contains("per capita"), 
+           contains("growth"), 
+           everything())%>%
     DT::datatable(extensions = "Buttons",
               rownames = FALSE,     
               options = list(columnDefs = list(list(className = 'dt-center', targets = "_all")),
@@ -172,6 +198,7 @@ shiny::selectInput("which_thing",
             selected = "Building Permits") 
 ```
 
+* This table allows you to compare a variable across all districts.
     
 Column 
 -------------------------------------
@@ -182,8 +209,10 @@ Column
 DT::renderDataTable(server=FALSE,{
   district_conditions%>%
     filter(thing==input$which_thing)%>%
-    select(-region, -thing, -type)%>%
-    pivot_wider(id_cols = district, names_from = name, values_from = value)%>%
+    select(-Region, -thing, -type, -geometry)%>%
+    mutate(value=scales::comma(value, accuracy=.0001))%>%
+    pivot_wider(id_cols = District, names_from = name, values_from = value)%>%
+    select(District, contains("decile"), contains("per capita"), contains("growth"),everything())%>%
     DT::datatable(extensions = "Buttons",
               rownames = FALSE,     
               options = list(columnDefs = list(list(className = 'dt-center', targets = "_all")),
@@ -215,6 +244,7 @@ shiny::selectInput("which_type",
             selected = "index") 
 ```
 
+* This table allows you to compare a type of measure (raw data, normalized, index) across all districts.
     
 Column 
 -------------------------------------
@@ -225,8 +255,9 @@ Column
 DT::renderDataTable(server=FALSE,{
   district_conditions%>%
     filter(type==input$which_type)%>%
-    select(-region, -thing, -type)%>%
-    pivot_wider(id_cols = district, names_from = name, values_from = value)%>%
+    select(-Region, -thing, -type, -geometry)%>%
+    mutate(value=scales::comma(value, accuracy=.0001))%>%
+    pivot_wider(id_cols = District, names_from = name, values_from = value)%>%
     DT::datatable(extensions = "Buttons",
               rownames = FALSE,     
               options = list(columnDefs = list(list(className = 'dt-center', targets = "_all")),
@@ -253,24 +284,47 @@ Inputs {.sidebar}
 -------------------------------------
 
 ```{r}
-shiny::selectInput("which_plot", 
+shiny::selectInput("which_plot",
             label = "Choose a plot:",
-            choices = pca_plots$names, 
-            selected = pca_plots$names[1]) 
+            choices = c("Biplot", "Comparison"),
+            selected = "Biplot")
 ```
 
+* Principal component analysis is an alternative way to collapse data spanning multiple dimensions into a single measure (index).
+* The first principal component (the x axis on the biplot) is the dimension that contains the greatest amount of information regarding the 6 measures of economic activity.
+* The comparison plot compares the overall index (based on deciles) with the first principal component.
+  
     
 Column 
 -------------------------------------
     
-### `r reactive({input$which_plot})`
+### 
     
 ```{r}
 renderPlot({
-   pca_plots%>%
-    filter(names==input$which_plot)%>%
-    pull(plots)
-})%>%
-  bindCache(input$which_plot)
+  if(input$which_plot=="Biplot"){
+  ggbiplot::ggbiplot(pca, 
+                     alpha=.5, 
+                     labels.size = 4,
+                     varname.size = 4)+
+  ggrepel::geom_text_repel(aes(label= str_to_title(str_replace_all(rownames(pca$scores),"_", " "))), alpha=.5)+
+  theme_minimal()+
+      xlim(-.18,.18)
+  }else{
+    district_conditions%>%
+      filter(name=="Overall: index"| name=="PCA: index" )%>%
+      select(-Region, -geometry, -thing, -type)%>%
+      pivot_wider(id_cols = District, names_from = name, values_from = value)%>%
+      ggplot(aes(`PCA: index`,`Overall: index`, label=District))+
+      geom_smooth(method="lm", se = FALSE, colour="grey")+
+      geom_point()+
+      ggrepel::geom_label_repel()
+    
+  }
+})
 ```
+
+
+
+
 
