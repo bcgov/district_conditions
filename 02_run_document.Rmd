@@ -5,9 +5,14 @@ output:
   flexdashboard::flex_dashboard:
     orientation: rows
     social: menu
-    source_code: https://github.com/bcgov/district_conditions 
+    source_code: https://github.com/bcgov/district_conditions
     css: style.css
 runtime: shiny
+resource_files:
+- processed_data/pca.rds
+- processed_data/standardized.rds
+- processed_data/district_conditions.rds
+- R/functions.R
 ---
 
 ```{r global, include=FALSE}

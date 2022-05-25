@@ -85,7 +85,7 @@ district_conditions <- readxl::read_excel(here::here("raw_data", "2022 update da
   )
 # An alternative way of creating an index based on multiple measures is to perform principal component analysis, where the first
 # principal component serves as the index.
-# Here we use Nipals because it can deal with missing volues.
+# Here we use Nipals because it can deal with missing values.
 pca <- district_conditions %>%
   select(District, contains("per capita"), contains("growth")) %>%
   column_to_rownames(var = "District") %>%
