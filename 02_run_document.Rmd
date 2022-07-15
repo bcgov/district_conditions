@@ -314,9 +314,10 @@ renderPlot({
   }else{
     district_conditions%>%
       filter(name=="Overall: index" | name=="PCA: index")%>%
-      ungroup()%>%
+      as_tibble()%>%
       select(regional_district, name, value)%>%
-      pivot_wider(id_cols = c(regional_district,geometry), names_from = name, values_from = value)%>%
+      distinct(regional_district, name, .keep_all = TRUE) %>%
+      pivot_wider(id_cols = c(regional_district), names_from = name, values_from = value)%>%
       ggplot(aes(`PCA: index`,`Overall: index`, label=regional_district))+
       geom_smooth(method="lm", se = FALSE, colour="grey")+
       geom_point()+
