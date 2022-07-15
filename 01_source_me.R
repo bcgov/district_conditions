@@ -1,34 +1,37 @@
 library(tidyverse)
+library(sf)
 #One way to create an index based on several economic indicators is to bin the data e.g. deciles and then create the index as an average
 #of the decile scores for each indicator.
 bins <- 10 # decile scores.
-#the shape data for maps---------
-#mostly regional districts---------
-regional_districts <- sf::st_read(here::here(
-  "map_data",
-  "Regional Districts",
-  "ABMS_RD_polygon.shp"
-)) %>%
-  janitor::clean_names() %>%
-  select(aa_name, geometry)
-#plus one large municipality-------
-one_large_municipality <- sf::st_read(here::here(
-  "map_data",
-  "Municipalities",
-  "ABMS_MUNI_polygon.shp"
-)) %>%
-  janitor::clean_names() %>%
-  filter(area_sqm == max(area_sqm)) %>%
-  select(aa_name, geometry)
-#bind the regional districts and one large municipality together
-regional_districts <- bind_rows(regional_districts, one_large_municipality) %>%
-  mutate(
-    aa_name = janitor::make_clean_names(aa_name),
-    aa_name = str_replace(aa_name, "regional_district_of_", ""),
-    aa_name = str_replace(aa_name, "_regional_district", ""),
-    aa_name = str_replace(aa_name, "_region_unincorporated", ""),
-    aa_name = str_replace(aa_name, "_regional_municipality", "")
-  )
+
+bc_regional_districts <- read_rds("https://github.com/bcgov/bc_regional_districts_sf/raw/main/out/bc_regional_districts_sf.rds")
+# #the shape data for maps---------
+# #mostly regional districts---------
+# regional_districts <- sf::st_read(here::here(
+#   "map_data",
+#   "Regional Districts",
+#   "ABMS_RD_polygon.shp"
+# )) %>%
+#   janitor::clean_names() %>%
+#   select(aa_name, geometry)
+# #plus one large municipality-------
+# one_large_municipality <- sf::st_read(here::here(
+#   "map_data",
+#   "Municipalities",
+#   "ABMS_MUNI_polygon.shp"
+# )) %>%
+#   janitor::clean_names() %>%
+#   filter(area_sqm == max(area_sqm)) %>%
+#   select(aa_name, geometry)
+# #bind the regional districts and one large municipality together
+# regional_districts <- bind_rows(regional_districts, one_large_municipality) %>%
+#   mutate(
+#     aa_name = janitor::make_clean_names(aa_name),
+#     aa_name = str_replace(aa_name, "regional_district_of_", ""),
+#     aa_name = str_replace(aa_name, "_regional_district", ""),
+#     aa_name = str_replace(aa_name, "_region_unincorporated", ""),
+#     aa_name = str_replace(aa_name, "_regional_municipality", "")
+#   )
 #the excel file features non-unique column names, and missing names (for empty columns)
 #create column names (this could easily break if the file structure changes)
 column_names <- c(
@@ -115,13 +118,14 @@ district_conditions <- full_join(district_conditions, pca_index, by = c("Distric
     `MPI Estimated Cost: decile`,
     `Small Business Registrations: decile`,
     `Population: decile`
-  ), na.rm = TRUE)) %>%
-  pivot_longer(cols = -c(Region, District), names_to = "name", values_to = "value")%>%
-  full_join(regional_districts, by = c("District" = "aa_name")) %>%
-  #removing the missing data important for map labeling.---------
-  na.omit()%>%
+  ), na.rm = TRUE)) 
+
+
+
+district_conditions<- left_join(bc_regional_districts, district_conditions, by = c("regional_district"="District"))%>%
+  pivot_longer(cols = -c(id, regional_district, Region, geometry), names_to = "name", values_to = "value")%>%
   mutate(name2=name,
-         District= str_to_title(str_replace_all(District, "_", " ")))%>%
+         regional_district= str_to_title(str_replace_all(regional_district, "_", " ")))%>%
   separate(name2, into=c("thing", "type"), sep = ": ")%>%
   mutate(type=case_when(type=="per capita"~"normalized",
                         type=="growth"~"normalized",
@@ -140,3 +144,11 @@ standardized <- district_conditions%>%
 saveRDS(district_conditions, here::here("processed_data", "district_conditions.rds"))
 saveRDS(standardized, here::here("processed_data", "standardized.rds"))
 saveRDS(pca,here::here("processed_data", "pca.rds"))
+
+# plt <- ggplot(filter(district_conditions, thing=="Overall"),aes(fill=value))+
+#   geom_sf()+
+#   scale_fill_viridis_c()+
+#   ggthemes::theme_map()
+# 
+# plotly::ggplotly(plt)
+

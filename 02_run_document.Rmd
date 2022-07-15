@@ -29,8 +29,9 @@ resource_files:
 # See the License for the specific language governing permissions and limitations under the License.
 # libraries----------
 library(tidyverse)
+library(sf)
 # load objects--------
-bc_map <- bcmaps::bc_bound()
+#bc_map <- bcmaps::bc_bound()
 bcPalette <- c("#fabc29", "#1f4181")
 source(here::here("R", "functions.R"))
 district_conditions <- readRDS(here::here("processed_data", "district_conditions.rds"))
@@ -53,7 +54,6 @@ shiny::selectInput("what_var",
   choices = plot_vars,
   selected = plot_vars[1]
 )
-checkboxInput("add_annotations", "Annotate Map?", value = FALSE)
 ```
 
 * The overall index is a score (out of 10) based on 6 measures of economic activity.
@@ -68,9 +68,9 @@ Column
     
 ```{r, fig.retina = 3}
 renderPlot({
-  static_map(input$what_var, district_conditions , bc_map, input$add_annotations)
+  static_map(input$what_var, district_conditions)
 }) %>%
-bindCache(input$what_var, input$add_annotations)  
+bindCache(input$what_var)  
 ```
 
 
@@ -83,8 +83,8 @@ Inputs {.sidebar}
 ```{r}
 shiny::selectInput("which_district", 
             label = "Choose a district:",
-            choices = unique(standardized$District), 
-            selected = unique(standardized$District)[1]) 
+            choices = unique(standardized$regional_district), 
+            selected = unique(standardized$regional_district)[1]) 
 ```
 
 * This plot allows you to compare a single district with all other districts.
@@ -100,13 +100,13 @@ Column
 ```{r}
   plotly::renderPlotly({
   standardized <-  standardized%>%
-    mutate(colour=if_else(District==input$which_district, input$which_district, "All other Districts"))
+    mutate(colour=if_else(regional_district==input$which_district, input$which_district, "All other Districts"))
 #  standardized<- plotly::highlight_key(standardized, ~District) #(for showing groups on hover) 
   plt <- ggplot(standardized, aes(name, 
                                   prop_of_max, 
                                   colour=colour,
-                                  group=District,
-                                  text = paste(District,
+                                  group=regional_district,
+                                  text = paste(regional_district,
                                               name,
                                               scales::percent(prop_of_max, accuracy = .1),
                                               "of maximum value", sep=" ")))+
@@ -150,16 +150,18 @@ Column
     
 ```{r}
 DT::renderDataTable(server=FALSE, {
-  district_conditions%>%
+  temp <- district_conditions%>%
     filter(Region==input$which_region)%>%
+    as_tibble()%>%
     select(-Region, -geometry)%>%
+    distinct(regional_district, name, .keep_all = TRUE) %>%
     mutate(value=scales::comma(value, accuracy=.0001))%>%
-    pivot_wider(id_cols = District, names_from = name, values_from = value)%>%
-    select(District, 
-           contains("Overall"), 
-           contains("decile"), 
-           contains("per capita"), 
-           contains("growth"), 
+    pivot_wider(id_cols = regional_district, names_from = name, values_from = value)%>%
+    select(regional_district,
+           contains("Overall"),
+           contains("decile"),
+           contains("per capita"),
+           contains("growth"),
            everything())%>%
     DT::datatable(extensions = "Buttons",
               rownames = FALSE,     
@@ -204,10 +206,12 @@ Column
 DT::renderDataTable(server=FALSE,{
   district_conditions%>%
     filter(thing==input$which_thing)%>%
+    as_tibble()%>%
     select(-Region, -thing, -type, -geometry)%>%
+    distinct(regional_district, name, .keep_all = TRUE) %>%
     mutate(value=scales::comma(value, accuracy=.0001))%>%
-    pivot_wider(id_cols = District, names_from = name, values_from = value)%>%
-    select(District, contains("decile"), contains("per capita"), contains("growth"),everything())%>%
+    pivot_wider(id_cols = regional_district, names_from = name, values_from = value)%>%
+    select(regional_district, contains("decile"), contains("per capita"), contains("growth"),everything())%>%
     DT::datatable(extensions = "Buttons",
               rownames = FALSE,     
               options = list(columnDefs = list(list(className = 'dt-center', targets = "_all")),
@@ -250,9 +254,11 @@ Column
 DT::renderDataTable(server=FALSE,{
   district_conditions%>%
     filter(type==input$which_type)%>%
+    as_tibble()%>%
     select(-Region, -thing, -type, -geometry)%>%
+    distinct(regional_district, name, .keep_all = TRUE) %>%
     mutate(value=scales::comma(value, accuracy=.0001))%>%
-    pivot_wider(id_cols = District, names_from = name, values_from = value)%>%
+    pivot_wider(id_cols = regional_district, names_from = name, values_from = value)%>%
     DT::datatable(extensions = "Buttons",
               rownames = FALSE,     
               options = list(columnDefs = list(list(className = 'dt-center', targets = "_all")),
@@ -307,10 +313,11 @@ renderPlot({
       xlim(-.18,.18)
   }else{
     district_conditions%>%
-      filter(name=="Overall: index"| name=="PCA: index" )%>%
-      select(-Region, -geometry, -thing, -type)%>%
-      pivot_wider(id_cols = District, names_from = name, values_from = value)%>%
-      ggplot(aes(`PCA: index`,`Overall: index`, label=District))+
+      filter(name=="Overall: index" | name=="PCA: index")%>%
+      ungroup()%>%
+      select(regional_district, name, value)%>%
+      pivot_wider(id_cols = c(regional_district,geometry), names_from = name, values_from = value)%>%
+      ggplot(aes(`PCA: index`,`Overall: index`, label=regional_district))+
       geom_smooth(method="lm", se = FALSE, colour="grey")+
       geom_point()+
       ggrepel::geom_label_repel()
